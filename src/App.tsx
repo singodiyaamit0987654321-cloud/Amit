@@ -13,7 +13,11 @@ import {
   ListTodo,
   CheckSquare,
   X,
+  Search,
 } from 'lucide-react';
+
+type StatusFilter = 'all' | 'pending' | 'completed';
+type PriorityFilter = 'all' | Priority;
 import { supabase, type Task, type TaskInsert } from '@/lib/supabase';
 
 type Priority = 'low' | 'medium' | 'high';
@@ -81,6 +85,11 @@ function App() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  // search & filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
 
   // form state
   const [title, setTitle] = useState('');
@@ -221,12 +230,39 @@ function App() {
     setTasks((prev) => prev.filter((t) => t.id !== id));
   };
 
-  const pendingTasks = tasks.filter((t) => !t.completed);
-  const completedTasks = tasks.filter((t) => t.completed);
+  const matchesSearch = (t: Task) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      t.title.toLowerCase().includes(q) ||
+      (t.description?.toLowerCase().includes(q) ?? false)
+    );
+  };
 
-  const overdueCount = pendingTasks.filter((t) =>
-    isOverdue(t.deadline, t.completed)
-  ).length;
+  const matchesPriority = (t: Task) =>
+    priorityFilter === 'all' || t.priority === priorityFilter;
+
+  const filteredTasks = tasks.filter(
+    (t) => matchesSearch(t) && matchesPriority(t)
+  );
+
+  const pendingTasks = filteredTasks.filter((t) => !t.completed);
+  const completedTasks = filteredTasks.filter((t) => t.completed);
+
+  const overdueCount = tasks
+    .filter((t) => !t.completed)
+    .filter((t) => isOverdue(t.deadline, t.completed)).length;
+
+  const hasFilters = searchQuery.trim() !== '' || statusFilter !== 'all' || priorityFilter !== 'all';
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('all');
+    setPriorityFilter('all');
+  };
+
+  const showPending = statusFilter === 'all' || statusFilter === 'pending';
+  const showCompleted = statusFilter === 'all' || statusFilter === 'completed';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/40 to-slate-100">
@@ -280,6 +316,75 @@ function App() {
           />
         </div>
 
+        {/* Search & Filters */}
+        {tasks.length > 0 && (
+          <div className="mb-6 space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search tasks by title or description..."
+                className="w-full pl-10 pr-10 py-2.5 text-sm border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <FilterPill
+                label="All"
+                active={statusFilter === 'all'}
+                onClick={() => setStatusFilter('all')}
+              />
+              <FilterPill
+                label="Pending"
+                active={statusFilter === 'pending'}
+                onClick={() => setStatusFilter('pending')}
+              />
+              <FilterPill
+                label="Completed"
+                active={statusFilter === 'completed'}
+                onClick={() => setStatusFilter('completed')}
+              />
+
+              <div className="w-px h-5 bg-slate-200 mx-1" />
+
+              <FilterPill
+                label="All Priorities"
+                active={priorityFilter === 'all'}
+                onClick={() => setPriorityFilter('all')}
+              />
+              {(Object.keys(priorityConfig) as Priority[]).map((p) => (
+                <FilterPill
+                  key={p}
+                  label={priorityConfig[p].label}
+                  active={priorityFilter === p}
+                  onClick={() => setPriorityFilter(p)}
+                  dotClass={priorityConfig[p].dot}
+                />
+              ))}
+
+              {hasFilters && (
+                <button
+                  onClick={clearFilters}
+                  className="ml-auto text-xs font-medium text-slate-500 hover:text-slate-700 inline-flex items-center gap-1 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="mb-6 bg-rose-50 border border-rose-200 rounded-lg p-4 flex items-start gap-3 fade-in">
             <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
@@ -294,59 +399,82 @@ function App() {
           </div>
         ) : tasks.length === 0 ? (
           <EmptyState onAdd={openAddForm} />
+        ) : filteredTasks.length === 0 && hasFilters ? (
+          <div className="text-center py-16">
+            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+              <Search className="w-8 h-8 text-slate-400" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-1">
+              No matching tasks
+            </h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Try adjusting your search or filters.
+            </p>
+            <button
+              onClick={clearFilters}
+              className="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors"
+            >
+              <X className="w-4 h-4" />
+              Clear all filters
+            </button>
+          </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Pending Section */}
-            <section>
-              <SectionHeader
-                icon={<Clock className="w-5 h-5" />}
-                title="Pending"
-                count={pendingTasks.length}
-                accent="text-blue-600"
-              />
-              <div className="space-y-3">
-                {pendingTasks.length === 0 ? (
-                  <EmptySection message="No pending tasks. You're all caught up!" />
-                ) : (
-                  pendingTasks.map((task) => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      onToggle={toggleComplete}
-                      onDelete={deleteTask}
-                      onEdit={openEditForm}
-                      toggling={togglingId === task.id}
-                    />
-                  ))
-                )}
-              </div>
-            </section>
+            {showPending && (
+              <section className={!showCompleted ? 'lg:col-span-2' : ''}>
+                <SectionHeader
+                  icon={<Clock className="w-5 h-5" />}
+                  title="Pending"
+                  count={pendingTasks.length}
+                  accent="text-blue-600"
+                />
+                <div className="space-y-3">
+                  {pendingTasks.length === 0 ? (
+                    <EmptySection message="No pending tasks. You're all caught up!" />
+                  ) : (
+                    pendingTasks.map((task) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        onToggle={toggleComplete}
+                        onDelete={deleteTask}
+                        onEdit={openEditForm}
+                        toggling={togglingId === task.id}
+                      />
+                    ))
+                  )}
+                </div>
+              </section>
+            )}
 
             {/* Completed Section */}
-            <section>
-              <SectionHeader
-                icon={<CheckCircle2 className="w-5 h-5" />}
-                title="Completed"
-                count={completedTasks.length}
-                accent="text-emerald-600"
-              />
-              <div className="space-y-3">
-                {completedTasks.length === 0 ? (
-                  <EmptySection message="Completed tasks will show up here." />
-                ) : (
-                  completedTasks.map((task) => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      onToggle={toggleComplete}
-                      onDelete={deleteTask}
-                      onEdit={openEditForm}
-                      toggling={togglingId === task.id}
-                    />
-                  ))
-                )}
-              </div>
-            </section>
+            {showCompleted && (
+              <section className={!showPending ? 'lg:col-span-2' : ''}>
+                <SectionHeader
+                  icon={<CheckCircle2 className="w-5 h-5" />}
+                  title="Completed"
+                  count={completedTasks.length}
+                  accent="text-emerald-600"
+                />
+                <div className="space-y-3">
+                  {completedTasks.length === 0 ? (
+                    <EmptySection message="Completed tasks will show up here." />
+                  ) : (
+                    completedTasks.map((task) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        onToggle={toggleComplete}
+                        onDelete={deleteTask}
+                        onEdit={openEditForm}
+                        toggling={togglingId === task.id}
+                      />
+                    ))
+                  )}
+                </div>
+              </section>
+            )}
           </div>
         )}
       </main>
@@ -519,6 +647,34 @@ function EmptySection({ message }: { message: string }) {
     <div className="text-center py-8 text-sm text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
       {message}
     </div>
+  );
+}
+
+function FilterPill({
+  label,
+  active,
+  onClick,
+  dotClass,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  dotClass?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border transition-all active:scale-95 ${
+        active
+          ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-600/20'
+          : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+      }`}
+    >
+      {dotClass && (
+        <span className={`w-2 h-2 rounded-full ${dotClass}`} />
+      )}
+      {label}
+    </button>
   );
 }
 
