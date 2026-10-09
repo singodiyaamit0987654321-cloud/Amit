@@ -15,12 +15,11 @@ import {
   X,
   Search,
 } from 'lucide-react';
-
-type StatusFilter = 'all' | 'pending' | 'completed';
-type PriorityFilter = 'all' | Priority;
 import { supabase, type Task, type TaskInsert } from '@/lib/supabase';
 
 type Priority = 'low' | 'medium' | 'high';
+type StatusFilter = 'all' | 'pending' | 'completed';
+type PriorityFilter = 'all' | Priority;
 
 const priorityConfig: Record<
   Priority,
